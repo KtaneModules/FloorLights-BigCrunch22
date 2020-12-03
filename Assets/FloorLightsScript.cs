@@ -31,7 +31,10 @@ public class FloorLightsScript : MonoBehaviour
 	bool Playable = false;
 	Coroutine Mackerel;
 	
+	int CounterOfCheck = 0;
+	
 	int[] TheLB = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+	int[] TheLB2 = {0, 0, 0, 0, 0, 0, 0, 0};
 	
 	int[][] NumberBasing = new int[10][]{
 		new int[10] {0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
@@ -154,14 +157,28 @@ public class FloorLightsScript : MonoBehaviour
 			ShowTime.text = "";
 			for (int x = 0; x < 100; x++)
 			{
-				if (Guideline[x / 10][x % 10] != NumberBasing[x / 10][x % 10])
+				if (Guideline[x / 10][x % 10] == NumberBasing[x / 10][x % 10])
 				{
-					StartCoroutine(BadShow());
-					return;
+					CounterOfCheck++;
 				}
 			}
-			StartCoroutine(BulbCycle());
-			StartCoroutine(MechaCelebration());
+			
+			if (CounterOfCheck == 100)
+			{
+				StartCoroutine(BulbCycle());
+				StartCoroutine(MechaCelebration());
+				
+			}
+			
+			else
+			{
+				TheLB2 = new int[] {0, 0, 0, 0, 0, 0, 0, 0};
+				for (int z = 0; z < 8; z++)
+				{
+					TheBulbs[z].material = BulbColors[0];
+				}
+				StartCoroutine(BadShow());
+			}
 		}
 	}
 	
@@ -169,6 +186,7 @@ public class FloorLightsScript : MonoBehaviour
 	{
 		Audio.PlaySoundAtTransform(SFX[3].name, transform);
 		Debug.LogFormat("[Floor Lights #{0}] That was incorrect. Module strikes.", moduleId);
+		Debug.LogFormat("[Floor Lights #{0}] The amount of correct toggles submitted: {1}", moduleId, CounterOfCheck.ToString());
 		Debug.LogFormat("[Floor Lights #{0}] ----------------------------------------------------------", moduleId);
 		for (int x = 0; x < 100; x++)
 		{
@@ -193,6 +211,32 @@ public class FloorLightsScript : MonoBehaviour
 		}
 		ShowTime.text = "SHOW TIME!";
 		Module.HandleStrike();
+		for (int i = 0; i < CounterOfCheck; i++)
+		{
+			TheLB2[0]++;
+			for (int y = 0; y < 8; y++)
+			{
+				if (TheLB2[y] > 1)
+				{
+					TheLB2[y] = TheLB2[y]-2;
+					TheLB2[y+1]++;
+				}
+			}
+		}
+		
+		for (int z = 0; z < 8; z++)
+		{
+			if (TheLB2[z] == 1)
+			{
+				TheBulbs[z].material = BulbColors[2];
+			}
+			
+			else
+			{
+				TheBulbs[z].material = BulbColors[0];
+			}
+		}
+		CounterOfCheck = 0;
 		Playable = true;
 	}
 	
@@ -231,6 +275,7 @@ public class FloorLightsScript : MonoBehaviour
 	IEnumerator MechaCelebration()
 	{
 		Debug.LogFormat("[Floor Lights #{0}] That was correct. Module solves.", moduleId);
+		Debug.LogFormat("[Floor Lights #{0}] The amount of correct toggles submitted: 100", moduleId);
 		Debug.LogFormat("[Floor Lights #{0}] ----------------------------------------------------------", moduleId);
 		int[] TL = {0, 1, 2, 3, 4, 10, 11, 12, 13, 14, 20, 21, 22, 23, 24, 30, 31, 32, 33, 34, 40, 41, 42, 43, 44};
 		int[] TR = {5, 6, 7, 8, 9, 15, 16, 17, 18, 19, 25, 26, 27, 28, 29, 35, 36, 37, 38, 39, 45, 46, 47, 48, 49};

@@ -24317,6 +24317,7 @@ MonoBehaviour:
   BulbColors:
   - {fileID: 2100000, guid: 66be748e50333495fa358705c328bcd6, type: 2}
   - {fileID: 2100000, guid: 43d01ce420b184860986ce3302f1ec32, type: 2}
+  - {fileID: 2100000, guid: 54e77d8e8c120554285d7e112010112f, type: 2}
 --- !u!114 &114751975906431060
 MonoBehaviour:
   m_ObjectHideFlags: 1
