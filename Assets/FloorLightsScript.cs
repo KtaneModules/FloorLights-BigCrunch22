@@ -25,11 +25,9 @@ public class FloorLightsScript : MonoBehaviour
 	public Material[] BulbColors;
 	
 	private string[] IgnoredModules;
-	long RoundNumber = 0;
-	long ActualStage = 0;
-	long MaxStage;
-	bool Playable = false;
-	Coroutine Mackerel;
+	long RoundNumber = 0, ActualStage = 0, MaxStage;
+	bool Playable = false, Striked = false;
+	Coroutine Mackerel, Waiter, March;
 	
 	int CounterOfCheck = 0;
 	
@@ -62,6 +60,9 @@ public class FloorLightsScript : MonoBehaviour
 		new int[10] {0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
 	};
 	
+	int ForwardRewind = -1;
+	List<int[]> CorrectNumberPlacement = new List<int[]>();
+	
 	//Logging
 	static int moduleIdCounter = 1;
     int moduleId;
@@ -79,7 +80,8 @@ public class FloorLightsScript : MonoBehaviour
 				return false;
 			};
 		}
-		Showtime.OnInteract += delegate(){ShowtimeReal(); return false;};
+		Showtime.OnInteract += delegate(){Waiter = StartCoroutine(WaitForTime()); return false;};
+		Showtime.OnInteractEnded += delegate(){if (Waiter != null) {StopCoroutine(Waiter);} ShowtimeReal();};
 	}
 	
 	void Start()
@@ -135,55 +137,166 @@ public class FloorLightsScript : MonoBehaviour
 			Module.OnActivate += StartingNumber;
 	}
 	
-	void ShowtimeReal()
+	IEnumerator WaitForTime()
 	{
 		Audio.PlaySoundAtTransform(SFX[1].name, transform);
 		Showtime.AddInteractionPunch(.2f);
-		if (Playable)
+		if (Playable && Striked && ShowTime.text != "REWIND")
 		{
-			Playable = false;
-			Debug.LogFormat("[Floor Lights #{0}] You submitted these toggles:", moduleId);
-			for (int y = 0; y < 10; y++)
+			int Number = 0;
+			while (Number != 2)
 			{
-				string Bardock = "";
-				for (int z = 0; z < 10; z++)
-				{
-					Bardock += Guideline[y][z].ToString();
-				}
-				Debug.LogFormat("[Floor Lights #{0}] {1}", moduleId, Bardock);
+				yield return new WaitForSecondsRealtime(1f);
+				Number++;
 			}
-			Debug.LogFormat("[Floor Lights #{0}] ----------------------------------------------------------", moduleId);
-			
-			ShowTime.text = "";
+			ShowTime.text = "REWIND";
 			for (int x = 0; x < 100; x++)
 			{
-				if (Guideline[x / 10][x % 10] == NumberBasing[x / 10][x % 10])
-				{
-					CounterOfCheck++;
-				}
+				TilingLighting[x].material = DefaultColor;
 			}
-			
-			if (CounterOfCheck == 100)
+			for (int z = 0; z < 8; z++)
 			{
-				StartCoroutine(BulbCycle());
-				StartCoroutine(MechaCelebration());
+				TheBulbs[z].material = BulbColors[0];
+			}
+			ForwardRewind = -1;
+		}
+	}
+	
+	void ShowtimeReal()
+	{
+		if (ShowTime.text != "REWIND")
+		{
+			if (Playable)
+			{
+				Playable = false;
+				Debug.LogFormat("[Floor Lights #{0}] You submitted these toggles:", moduleId);
+				for (int y = 0; y < 10; y++)
+				{
+					string Bardock = "";
+					for (int z = 0; z < 10; z++)
+					{
+						Bardock += Guideline[y][z].ToString();
+					}
+					Debug.LogFormat("[Floor Lights #{0}] {1}", moduleId, Bardock);
+				}
+				Debug.LogFormat("[Floor Lights #{0}] ----------------------------------------------------------", moduleId);
 				
+				ShowTime.text = "";
+				for (int x = 0; x < 100; x++)
+				{
+					if (Guideline[x / 10][x % 10] == NumberBasing[x / 10][x % 10])
+					{
+						CounterOfCheck++;
+					}
+				}
+				
+				if (CounterOfCheck == 100)
+				{
+					StartCoroutine(BulbCycle());
+					StartCoroutine(MechaCelebration());
+					
+				}
+				
+				else
+				{
+					TheLB2 = new int[] {0, 0, 0, 0, 0, 0, 0, 0};
+					for (int z = 0; z < 8; z++)
+					{
+						TheBulbs[z].material = BulbColors[0];
+					}
+					StartCoroutine(BadShow());
+				}
+			}
+		}
+		
+		else
+		{
+			if (Playable)
+			{
+				if (March != null)
+				{
+					StopCoroutine(March);
+				}
+				ForwardRewind++;
+				ThematicMusic.Stop();
+				March = StartCoroutine(ForwardMarch());
+			}
+		}
+	}
+	
+	IEnumerator ForwardMarch()
+	{
+		ThematicMusic.clip = SFX[2];
+		ThematicMusic.Play();
+		if (ForwardRewind < MaxStage)
+		{
+			while (ThematicMusic.isPlaying)
+			{
+				int[] Alea = Enumerable.Range(0,100).ToArray().Shuffle();
+				
+				for (int a = 0; a < 100; a++)
+				{
+					if (a < 8)
+					{
+						TilingLighting[Alea[a]].material = FloorColor[UnityEngine.Random.Range(0,3)];
+					}
+					
+					else
+					{
+						TilingLighting[Alea[a]].material = DefaultColor;
+					}
+				}
+				yield return new WaitForSecondsRealtime(0.2f);
 			}
 			
-			else
+			for (int b = 0; b < 100; b++)
 			{
-				TheLB2 = new int[] {0, 0, 0, 0, 0, 0, 0, 0};
-				for (int z = 0; z < 8; z++)
+				if (CorrectNumberPlacement[ForwardRewind][b] > -1)
 				{
-					TheBulbs[z].material = BulbColors[0];
+					TilingLighting[b].material = FloorColor[CorrectNumberPlacement[ForwardRewind][b]];
 				}
-				StartCoroutine(BadShow());
+				
+				else
+				{
+					TilingLighting[b].material = DefaultColor;
+				}
 			}
+		}
+		
+		else
+		{
+			Playable = false;
+			Striked = false;
+			while (ThematicMusic.isPlaying)
+			{
+				int[] Alea = Enumerable.Range(0,100).ToArray().Shuffle();
+				
+				for (int a = 0; a < 100; a++)
+				{
+					if (a < 8)
+					{
+						TilingLighting[Alea[a]].material = FloorColor[UnityEngine.Random.Range(0,3)];
+					}
+					
+					else
+					{
+						TilingLighting[Alea[a]].material = DefaultColor;
+					}
+				}
+				yield return new WaitForSecondsRealtime(0.2f);
+			}
+			for (int c = 0; c < 100; c++)
+			{
+				TilingLighting[c].material = Guideline[c / 10][c % 10] == 1 ? FloorColor[3] : DefaultColor;
+			}
+			Playable = true;
+			ShowTime.text = "SHOW TIME!";
 		}
 	}
 	
 	IEnumerator BadShow()
 	{
+		Striked = true;
 		Audio.PlaySoundAtTransform(SFX[3].name, transform);
 		Debug.LogFormat("[Floor Lights #{0}] That was incorrect. Module strikes.", moduleId);
 		Debug.LogFormat("[Floor Lights #{0}] The amount of correct toggles submitted: {1}", moduleId, CounterOfCheck.ToString());
@@ -372,7 +485,7 @@ public class FloorLightsScript : MonoBehaviour
 	{
 		Lighting[Button].AddInteractionPunch(.2f);
 		Audio.PlaySoundAtTransform(SFX[1].name, transform);
-		if (Playable)
+		if (Playable && ShowTime.text != "REWIND")
 		{
 			Guideline[Button / 10][Button % 10] = (Guideline[Button / 10][Button % 10] + 1) % 2;
 			TilingLighting[Button].material = Guideline[Button / 10][Button % 10] == 1 ? FloorColor[3] : DefaultColor;
@@ -416,12 +529,10 @@ public class FloorLightsScript : MonoBehaviour
 				ThematicMusic.Play();
 				while (ThematicMusic.isPlaying)
 				{
-					int[] Alea = Enumerable.Range(0,100).ToArray().Shuffle();
-					List<int> Decamen = new List<int>();
-					
+					int[] Alea = Enumerable.Range(0,100).ToArray().Shuffle();			
 					for (int a = 0; a < 100; a++)
 					{
-						if (a < 10)
+						if (a < 8)
 						{
 							TilingLighting[Alea[a]].material = FloorColor[UnityEngine.Random.Range(0,3)];
 						}
@@ -466,11 +577,9 @@ public class FloorLightsScript : MonoBehaviour
 			while (ThematicMusic.isPlaying)
 			{
 				int[] Alea = Enumerable.Range(0,100).ToArray().Shuffle();
-				List<int> Decamen = new List<int>();
-				
 				for (int a = 0; a < 100; a++)
 				{
-					if (a < 10)
+					if (a < 8)
 					{
 						TilingLighting[Alea[a]].material = FloorColor[UnityEngine.Random.Range(0,3)];
 					}
@@ -496,13 +605,13 @@ public class FloorLightsScript : MonoBehaviour
 			int[] Secha = Enumerable.Range(0,100).ToArray().Shuffle();
 			TheLB[0]++;
 			List<int> Callous = new List<int>();
-			for (int e = 0; e < 10; e++)
+			for (int e = 0; e < 8; e++)
 			{
 				Callous.Add(Secha[e]);
 			}
 			Callous.Sort();
 			string ColorLights = "";
-		
+			
 			for (int y = 0; y < TheLB.Count(); y++)
 			{
 				if (TheLB[y] > 1)
@@ -521,7 +630,7 @@ public class FloorLightsScript : MonoBehaviour
 			Debug.LogFormat("[Floor Lights #{0}] Tile patterns for Stage {1}:", moduleId, (ActualStage + 1).ToString());
 			for (int x = 0; x < 100; x++)
 			{
-				if (Monty != 10 && x == Callous[Monty])
+				if (Monty != 8 && x == Callous[Monty])
 				{
 					int Heckel = UnityEngine.Random.Range(0,3);
 					Mocha[x] = Heckel;
@@ -887,6 +996,8 @@ public class FloorLightsScript : MonoBehaviour
 				}
 			}
 			
+			CorrectNumberPlacement.Add(Mocha);
+			
 			Debug.LogFormat("[Floor Lights #{0}] Correct toggle patterns for this stage:", moduleId);
 			for (int y = 0; y < 10; y++)
 			{
@@ -904,11 +1015,9 @@ public class FloorLightsScript : MonoBehaviour
 			while (ThematicMusic.isPlaying)
 			{
 				int[] Alea = Enumerable.Range(0,100).ToArray().Shuffle();
-				List<int> Decamen = new List<int>();
-				
 				for (int a = 0; a < 100; a++)
 				{
-					if (a < 10)
+					if (a < 8)
 					{
 						TilingLighting[Alea[a]].material = FloorColor[UnityEngine.Random.Range(0,3)];
 					}
@@ -938,7 +1047,7 @@ public class FloorLightsScript : MonoBehaviour
 	
 	//twitch plays
     #pragma warning disable 414
-    private readonly string TwitchHelpMessage = @"To press a certain tile(s) on the platform, use the command !{0} tile [1-100] (Multiple tiles can be pressed using the command) | To submit the answer given on the module, use the command !{0} submit";
+    private readonly string TwitchHelpMessage = @"To press a certain tile(s) on the platform, use the command !{0} tile [1-100] (Multiple tiles can be pressed using the command) | To submit the answer given on the module, use the command !{0} submit | To perform a rewind (if you are able to), use the command !{0} rewind | To move forward on a stage during rewind, use the command !{0} advance";
     #pragma warning restore 414
 	
 	 IEnumerator ProcessTwitchCommand(string command)
@@ -953,9 +1062,48 @@ public class FloorLightsScript : MonoBehaviour
 		if (Regex.IsMatch(command, @"^\s*submit\s*$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant))
         {
 			yield return null;
+			if (ShowTime.text == "REWIND")
+			{
+				yield return "sendtochaterror You are currently on rewind. The command was not processed.";
+				yield break;
+			}
 			yield return "solve";
 			yield return "strike";
 			Showtime.OnInteract();
+			yield return new WaitForSecondsRealtime(0.1f);
+			Showtime.OnInteractEnded();
+		}
+		
+		if (Regex.IsMatch(command, @"^\s*rewind\s*$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant))
+        {
+			yield return null;
+			if (!Striked)
+			{
+				yield return "sendtochaterror You are unable to rewind currently. The command was not processed.";
+				yield break;
+			}
+			
+			if (ShowTime.text == "REWIND")
+			{
+				yield return "sendtochaterror You are currently on rewind. The command was not processed.";
+				yield break;
+			}
+			Showtime.OnInteract();
+			yield return new WaitForSecondsRealtime(2.5f);
+			Showtime.OnInteractEnded();
+		}
+		
+		if (Regex.IsMatch(command, @"^\s*advance\s*$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant))
+        {
+			yield return null;
+			if (ShowTime.text != "REWIND")
+			{
+				yield return "sendtochaterror You are currently not on rewind. The command was not processed.";
+				yield break;
+			}
+			Showtime.OnInteract();
+			yield return new WaitForSecondsRealtime(0.1f);
+			Showtime.OnInteractEnded();
 		}
 		
 		if (Regex.IsMatch(parameters[0], @"^\s*tile\s*$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant))
@@ -970,21 +1118,19 @@ public class FloorLightsScript : MonoBehaviour
 			for (int x = 1; x < parameters.Length; x++)
 			{
 				yield return "trycancel The command to perform the action was cancelled due to a cancel request.";
+				if (ShowTime.text == "REWIND")
+				{
+					yield return "sendtochaterror You are currently on rewind. The command was halted.";
+					yield break;
+				}
+				
 				int Ham;
-				bool Safety = Int32.TryParse(parameters[x], out Ham);
-				
-				if (!Safety)
+				if (!Int32.TryParse(parameters[x], out Ham))
 				{
-					yield return "sendtochaterror Tile position being sent contains an invalid character. The command was halted.";
+					yield return "sendtochaterror Tile position being sent contains is invalid. The command was halted.";
 					yield break;
 				}
-				
-				if (parameters[x].Length > 3)
-				{
-					yield return "sendtochaterror Tile position being sent is longer than 3 digits long. That is not possible. The command was halted.";
-					yield break;
-				}
-				
+			
 				if (Int32.Parse(parameters[x]) < 1 || Int32.Parse(parameters[x]) > 100)
 				{
 					yield return "sendtochaterror Tile position being is not between [1-100]. The command was halted.";
