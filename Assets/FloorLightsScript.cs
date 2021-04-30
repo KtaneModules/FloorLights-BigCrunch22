@@ -4,7 +4,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.RegularExpressions;
 using UnityEngine;
-using KModkit;
 
 public class FloorLightsScript : MonoBehaviour
 {
@@ -26,7 +25,7 @@ public class FloorLightsScript : MonoBehaviour
 	
 	private string[] IgnoredModules;
 	long RoundNumber = 0, ActualStage = 0, MaxStage;
-	bool Playable = false, Striked = false;
+	bool Playable = false, Striked = false, RealPass = false, WillStrike = false, MechaAnim = false;
 	Coroutine Mackerel, Waiter, March;
 	
 	int CounterOfCheck = 0;
@@ -193,8 +192,8 @@ public class FloorLightsScript : MonoBehaviour
 				if (CounterOfCheck == 100)
 				{
 					StartCoroutine(BulbCycle());
-					StartCoroutine(MechaCelebration());
-					
+					MechaAnim = true;
+					StartCoroutine(MechaCelebration(false));
 				}
 				
 				else
@@ -297,6 +296,7 @@ public class FloorLightsScript : MonoBehaviour
 	IEnumerator BadShow()
 	{
 		Striked = true;
+		WillStrike = true;
 		Audio.PlaySoundAtTransform(SFX[3].name, transform);
 		Debug.LogFormat("[Floor Lights #{0}] That was incorrect. Module strikes.", moduleId);
 		Debug.LogFormat("[Floor Lights #{0}] The amount of correct toggles submitted: {1}", moduleId, CounterOfCheck.ToString());
@@ -324,6 +324,7 @@ public class FloorLightsScript : MonoBehaviour
 		}
 		ShowTime.text = "SHOW TIME!";
 		Module.HandleStrike();
+		WillStrike = false;
 		for (int i = 0; i < CounterOfCheck; i++)
 		{
 			TheLB2[0]++;
@@ -385,11 +386,14 @@ public class FloorLightsScript : MonoBehaviour
 		}
 	}
 	
-	IEnumerator MechaCelebration()
+	IEnumerator MechaCelebration(bool noLog)
 	{
-		Debug.LogFormat("[Floor Lights #{0}] That was correct. Module solves.", moduleId);
-		Debug.LogFormat("[Floor Lights #{0}] The amount of correct toggles submitted: 100", moduleId);
-		Debug.LogFormat("[Floor Lights #{0}] ----------------------------------------------------------", moduleId);
+		if (noLog)
+        {
+			Debug.LogFormat("[Floor Lights #{0}] That was correct. Module solves.", moduleId);
+			Debug.LogFormat("[Floor Lights #{0}] The amount of correct toggles submitted: 100", moduleId);
+			Debug.LogFormat("[Floor Lights #{0}] ----------------------------------------------------------", moduleId);
+		}
 		int[] TL = {0, 1, 2, 3, 4, 10, 11, 12, 13, 14, 20, 21, 22, 23, 24, 30, 31, 32, 33, 34, 40, 41, 42, 43, 44};
 		int[] TR = {5, 6, 7, 8, 9, 15, 16, 17, 18, 19, 25, 26, 27, 28, 29, 35, 36, 37, 38, 39, 45, 46, 47, 48, 49};
 		int[] BL = {50, 51, 52, 53, 54, 60, 61, 62, 63, 64, 70, 71, 72, 73, 74, 80, 81, 82, 83, 84, 90, 91, 92, 93, 94};
@@ -417,6 +421,7 @@ public class FloorLightsScript : MonoBehaviour
 		}
 		yield return new WaitForSecondsRealtime(0.46f);
 		Module.HandlePass();
+		RealPass = true;
 		ShowTime.text = MaxStage == 0 ? "PLAY TIME" : "GOOD SHOW";
 		int[] Darken = {5, 4, 15, 14, 25, 24, 35, 34, 45, 44, 55, 54, 85, 84, 95, 94};
 		for (int i = 0; i < Darken.Length; i++)
@@ -501,7 +506,8 @@ public class FloorLightsScript : MonoBehaviour
 			{
 				Playable = false;
 				StartCoroutine(BulbCycle());
-				StartCoroutine(MechaCelebration());
+				MechaAnim = true;
+				StartCoroutine(MechaCelebration(false));
 				ShowTime.text = "";
 				Debug.LogFormat("[Floor Lights #{0}] Unable to generate stages. Play time is in effect.", moduleId);
 			}
@@ -1141,5 +1147,40 @@ public class FloorLightsScript : MonoBehaviour
 			}
 		}
 		
+	}
+
+	IEnumerator TwitchHandleForcedSolve()
+    {
+		if (WillStrike)
+        {
+			StopAllCoroutines();
+			StartCoroutine(MechaCelebration(true));
+			yield break;
+        }
+		if (!MechaAnim)
+        {
+			if (ShowTime.text == "REWIND")
+            {
+				while (ForwardRewind < MaxStage)
+                {
+					Showtime.OnInteract();
+					yield return new WaitForSecondsRealtime(0.1f);
+					Showtime.OnInteractEnded();
+				}
+            }
+			while (!Playable) yield return true;
+			for (int x = 0; x < 100; x++)
+			{
+				if (Guideline[x / 10][x % 10] != NumberBasing[x / 10][x % 10])
+				{
+					Lighting[x].OnInteract();
+					yield return new WaitForSecondsRealtime(0.05f);
+				}
+			}
+			Showtime.OnInteract();
+			yield return new WaitForSecondsRealtime(0.1f);
+			Showtime.OnInteractEnded();
+		}
+		while (!RealPass) yield return true;
 	}
 }
