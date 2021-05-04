@@ -235,7 +235,7 @@ public class FloorLightsScript : MonoBehaviour
 				
 				for (int a = 0; a < 100; a++)
 				{
-					if (a < 8)
+					if (a < 5)
 					{
 						TilingLighting[Alea[a]].material = FloorColor[UnityEngine.Random.Range(0,3)];
 					}
@@ -272,7 +272,7 @@ public class FloorLightsScript : MonoBehaviour
 				
 				for (int a = 0; a < 100; a++)
 				{
-					if (a < 8)
+					if (a < 5)
 					{
 						TilingLighting[Alea[a]].material = FloorColor[UnityEngine.Random.Range(0,3)];
 					}
@@ -538,7 +538,7 @@ public class FloorLightsScript : MonoBehaviour
 					int[] Alea = Enumerable.Range(0,100).ToArray().Shuffle();			
 					for (int a = 0; a < 100; a++)
 					{
-						if (a < 8)
+						if (a < 5)
 						{
 							TilingLighting[Alea[a]].material = FloorColor[UnityEngine.Random.Range(0,3)];
 						}
@@ -585,7 +585,7 @@ public class FloorLightsScript : MonoBehaviour
 				int[] Alea = Enumerable.Range(0,100).ToArray().Shuffle();
 				for (int a = 0; a < 100; a++)
 				{
-					if (a < 8)
+					if (a < 5)
 					{
 						TilingLighting[Alea[a]].material = FloorColor[UnityEngine.Random.Range(0,3)];
 					}
@@ -636,7 +636,7 @@ public class FloorLightsScript : MonoBehaviour
 			Debug.LogFormat("[Floor Lights #{0}] Tile patterns for Stage {1}:", moduleId, (ActualStage + 1).ToString());
 			for (int x = 0; x < 100; x++)
 			{
-				if (Monty != 8 && x == Callous[Monty])
+				if (Monty != 5 && x == Callous[Monty])
 				{
 					int Heckel = UnityEngine.Random.Range(0,3);
 					Mocha[x] = Heckel;
@@ -1023,7 +1023,7 @@ public class FloorLightsScript : MonoBehaviour
 				int[] Alea = Enumerable.Range(0,100).ToArray().Shuffle();
 				for (int a = 0; a < 100; a++)
 				{
-					if (a < 8)
+					if (a < 5)
 					{
 						TilingLighting[Alea[a]].material = FloorColor[UnityEngine.Random.Range(0,3)];
 					}
