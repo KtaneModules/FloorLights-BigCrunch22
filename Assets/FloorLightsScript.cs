@@ -111,7 +111,7 @@ public class FloorLightsScript : MonoBehaviour
         {
             if (_submissionPhase)
             {
-                Debug.LogFormat("[Floor Lights #{0}] Submitted {1}.", _moduleId, _inputSquares.Select(i => i ? "#" : ".").Join(""));
+                Debug.LogFormat("[Floor Lights #{0}] Submitted {1}.", _moduleId, _inputSquares.Select(i => i ? "#" : "*").Join(""));
                 int count = 0;
                 for (int i = 0; i < 36; i++)
                     if (_inputSquares[i] == _solutionSquares[i])
@@ -228,7 +228,7 @@ public class FloorLightsScript : MonoBehaviour
                 str.Add("RGB"[_stageInfo[i][j].color] + " at " + GetCoord(_stageInfo[i][j].coord));
             Debug.LogFormat("[Floor Lights #{0}] Stage {1}: Generated {2}", _moduleId, i + 1, str.Join(", "));
             ToggleCells(_stageInfo[i]);
-            Debug.LogFormat("[Floor Lights #{0}] Grid: {1}", _moduleId, _solutionSquares.Select(j => j ? "#" : ".").Join(""));
+            Debug.LogFormat("[Floor Lights #{0}] Grid: {1}", _moduleId, _solutionSquares.Select(j => j ? "#" : "*").Join(""));
         }
         Debug.LogFormat("[Floor Lights #{0}] All stages generated.", _moduleId);
     }
