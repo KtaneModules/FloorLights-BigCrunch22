@@ -1,5 +1,5 @@
 fileFormatVersion: 2
-guid: 704e2c6a00319b24094d4f6ec695bc9d
+guid: 8e02b4d04c39ef145a5f2362af8c6067
 TrueTypeFontImporter:
   externalObjects: {}
   serializedVersion: 4
@@ -11,7 +11,8 @@ TrueTypeFontImporter:
   fontName: Retwisted
   fontNames:
   - Retwisted
-  fallbackFontReferences: []
+  fallbackFontReferences:
+  - {fileID: 12800000, guid: 704e2c6a00319b24094d4f6ec695bc9d, type: 3}
   customCharacters: 
   fontRenderingMode: 0
   ascentCalculationMode: 1
