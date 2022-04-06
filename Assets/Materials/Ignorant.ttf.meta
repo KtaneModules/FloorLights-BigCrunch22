@@ -1,5 +1,5 @@
 fileFormatVersion: 2
-guid: fc3aae3e1c174484d95c194b5469f0e9
+guid: ef580651404c25d4e92a01074b5d3b43
 TrueTypeFontImporter:
   externalObjects: {}
   serializedVersion: 4
@@ -11,8 +11,7 @@ TrueTypeFontImporter:
   fontName: Ignorant
   fontNames:
   - Ignorant
-  fallbackFontReferences:
-  - {fileID: 12800000, guid: ef580651404c25d4e92a01074b5d3b43, type: 3}
+  fallbackFontReferences: []
   customCharacters: 
   fontRenderingMode: 0
   ascentCalculationMode: 1

@@ -2,1200 +2,551 @@
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 using System.Text.RegularExpressions;
 using UnityEngine;
+using Rnd = UnityEngine.Random;
 
 public class FloorLightsScript : MonoBehaviour
 {
-    public KMAudio Audio;
-    public KMBombInfo Bomb;
     public KMBombModule Module;
-    public KMSelectable[] Lighting;
-    public KMSelectable Showtime;
-
-    public AudioSource ThematicMusic;
-    public TextMesh ShowTime;
-    public AudioClip[] SFX;
+    public KMBombInfo BombInfo;
+    public KMAudio Audio;
     public KMBossModule Boss;
-    public Renderer[] TilingLighting;
-    public Material[] FloorColor;
-    public Material DefaultColor;
-    public Renderer[] TheBulbs;
-    public Material[] BulbColors;
+    public KMSelectable[] SquareSels;
+    public GameObject[] SquareObjs;
+    public Material[] SquareMats;
+    public KMSelectable ShowTimeSel;
+    public TextMesh[] ScreenText;
+    public AudioSource StageAdvanceAudio;
+    public TextMesh[] PartyText;
 
-    private string[] IgnoredModules;
-    long RoundNumber = 0, ActualStage = 0, MaxStage;
-    bool Playable = false, Striked = false, RealPass = false, WillStrike = false, MechaAnim = false;
-    Coroutine Mackerel, Waiter, March;
+    private int _moduleId;
+    private static int _moduleIdCounter = 1;
+    private bool _moduleSolved;
+    private string[] _ignoredModules;
 
-    int CounterOfCheck = 0;
-
-    int[] TheLB = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
-    int[] TheLB2 = { 0, 0, 0, 0, 0, 0, 0, 0 };
-
-    int[][] NumberBasing = new int[10][]{
-        new int[10] {0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-        new int[10] {0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-        new int[10] {0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-        new int[10] {0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-        new int[10] {0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-        new int[10] {0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-        new int[10] {0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-        new int[10] {0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-        new int[10] {0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-        new int[10] {0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
-    };
-
-    int[][] Guideline = new int[10][]{
-        new int[10] {0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-        new int[10] {0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-        new int[10] {0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-        new int[10] {0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-        new int[10] {0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-        new int[10] {0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-        new int[10] {0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-        new int[10] {0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-        new int[10] {0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-        new int[10] {0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
-    };
-
-    int ForwardRewind = -1;
-    List<int[]> CorrectNumberPlacement = new List<int[]>();
-
-    //Logging
-    static int moduleIdCounter = 1;
-    int moduleId;
-    private bool ModuleSolved;
-
-    void Awake()
+    private sealed class Cell : IEquatable<Cell>
     {
-        moduleId = moduleIdCounter++;
-        for (int q = 0; q < Lighting.Count(); q++)
+        public int coord;
+        public int color;
+
+        public Cell(int coord, int color)
         {
-            int Button = q;
-            Lighting[Button].OnInteract += delegate
-            {
-                if (!ModuleSolved)
-                    TilingToggle(Button);
-                return false;
-            };
+            this.coord = coord;
+            this.color = color;
         }
-        Showtime.OnInteract += delegate ()
+
+        public bool Equals(Cell other)
         {
-            if (!ModuleSolved)
-                Waiter = StartCoroutine(WaitForTime());
+            return other != null && other.coord == coord && other.color == color;
+        }
+    }
+
+    private List<Cell[]> _stageInfo = new List<Cell[]>();
+    private const int _cellCount = 3; // Adjust this to change tiles per stage.
+    private int _stageCount;
+    private int _currentStage = -1;
+    private int _currentSolves;
+    private bool _readyToAdvance;
+    private bool _submissionPhase;
+    private bool _pseudoSubmissionPhase;
+    private bool[] _inputSquares = new bool[36];
+    private bool[] _solutionSquares = new bool[36];
+    private bool _stageRecovery;
+    private bool _hasStruck;
+    private bool _isAnimating;
+    private float _holdTime;
+    private bool _trueModuleSolved;
+    private Coroutine _holdTimer;
+    private Coroutine _flashStage;
+
+    private void Start()
+    {
+        _moduleId = _moduleIdCounter++;
+        for (int i = 0; i < SquareSels.Length; i++)
+            SquareSels[i].OnInteract += SquarePress(i);
+        Module.OnActivate += Activate;
+        ShowTimeSel.OnInteract += ShowTimePress;
+        ShowTimeSel.OnInteractEnded += ShowTimeRelease;
+        StartCoroutine(Init());
+    }
+
+    private KMSelectable.OnInteractHandler SquarePress(int btn)
+    {
+        return delegate ()
+        {
+            Audio.PlaySoundAtTransform("Douga", SquareSels[btn].transform);
+            SquareSels[btn].AddInteractionPunch(0.25f);
+            if (_moduleSolved || !_submissionPhase || _isAnimating || !_pseudoSubmissionPhase)
+                return false;
+            _inputSquares[btn] = !_inputSquares[btn];
+            SquareObjs[btn].GetComponent<MeshRenderer>().material = _inputSquares[btn] ? SquareMats[3] : SquareMats[4];
             return false;
         };
-        Showtime.OnInteractEnded += delegate ()
-        {
-            if (!ModuleSolved)
-            {
-                if (Waiter != null)
-                    StopCoroutine(Waiter);
-                ShowtimeReal();
-            }
-        };
     }
 
-    void Start()
+    private bool ShowTimePress()
     {
-        if (IgnoredModules == null)
-            IgnoredModules = Boss.GetIgnoredModules("Floor Lights", new string[]{
-                    "14",
-                    "42",
-                    "501",
-                    "A>N<D",
-                    "Bamboozling Time Keeper",
-                    "Brainf---",
-                    "Busy Beaver",
-                    "Don't Touch Anything",
-                    "Floor Lights",
-                    "Forget Any Color",
-                    "Forget Enigma",
-                    "Forget Everything",
-                    "Forget It Not",
-                    "Forget Me Later",
-                    "Forget Me Not",
-                    "Forget Perspective",
-                    "Forget The Colors",
-                    "Forget Them All",
-                    "Forget This",
-                    "Forget Us Not",
-                    "Iconic",
-                    "Keypad Directionality",
-                    "Kugelblitz",
-                    "Multitask",
-                    "OmegaDestroyer",
-                    "OmegaForget",
-                    "Organization",
-                    "Password Destroyer",
-                    "Purgatory",
-                    "RPS Judging",
-                    "Security Council",
-                    "Shoddy Chess",
-                    "Simon Forgets",
-                    "Simon's Stages",
-                    "Souvenir",
-                    "Tallordered Keys",
-                    "The Time Keeper",
-                    "The Troll",
-                    "The Twin",
-                    "The Very Annoying Button",
-                    "Timing is Everything",
-                    "Turn The Key",
-                    "Ultimate Custom Night",
-                    "Übermodule",
-                    "Whiteout"
+        Audio.PlaySoundAtTransform("Douga", ShowTimeSel.transform);
+        if (_moduleSolved)
+            return false;
+        ShowTimeSel.AddInteractionPunch(0.5f);
+        _holdTimer = StartCoroutine(HoldTimer());
+        return false;
+    }
+
+    private void ShowTimeRelease()
+    {
+        if (_moduleSolved || _isAnimating)
+            return;
+        if (_holdTimer != null)
+            StopCoroutine(_holdTimer);
+        if (_stageRecovery)
+        {
+            Advance();
+            return;
+        }
+        if (_holdTime < 2f || !_hasStruck)
+        {
+            if (_submissionPhase)
+            {
+                Debug.LogFormat("[Floor Lights #{0}] Submitted {1}.", _moduleId, _inputSquares.Select(i => i ? "#" : "*").Join(""));
+                int count = 0;
+                for (int i = 0; i < 36; i++)
+                    if (_inputSquares[i] == _solutionSquares[i])
+                        count++;
+                if (count == 36)
+                {
+                    _moduleSolved = true;
+                    Debug.LogFormat("[Floor Lights #{0}] 36 out of 36 cells were correct. Module solved.", _moduleId);
+                    StartCoroutine(SolveAnimation());
+                }
+                else
+                {
+                    _isAnimating = true;
+                    _hasStruck = true;
+                    Debug.LogFormat("[Floor Lights #{0}] {1} out of 36 cells were correct. Strike.", _moduleId, count);
+                    StartCoroutine(StrikeAnimation(count));
+                }
+            }
+        }
+        else
+        {
+            _stageRecovery = true;
+            ScreenText[0].text = "REWIND";
+            _pseudoSubmissionPhase = false;
+            _submissionPhase = false;
+            _currentStage = -1;
+            for (int i = 0; i < 36; i++)
+                _inputSquares[i] = false;
+            Advance();
+        }
+    }
+
+    private IEnumerator HoldTimer()
+    {
+        _holdTime = 0f;
+        while (true)
+        {
+            yield return null;
+            _holdTime += Time.deltaTime;
+        }
+    }
+
+    private void Activate()
+    {
+        _readyToAdvance = true;
+    }
+
+    private IEnumerator Init()
+    {
+        yield return null;
+        if (_ignoredModules == null)
+            _ignoredModules = GetComponent<KMBossModule>().GetIgnoredModules("Floor Lights", new string[] {
+                "14",
+                "42",
+                "501",
+                "A>N<D",
+                "Bamboozling Time Keeper",
+                "Black Arrows",
+                "Brainf---",
+                "The Board Walk",
+                "Busy Beaver",
+                "Don't Touch Anything",
+                "Doomsday Button",
+                "Duck Konundrum",
+                "Floor Lights",
+                "Forget Any Color",
+                "Forget Enigma",
+                "Forget Everything",
+                "Forget Infinity",
+                "Forget It Not",
+                "Forget Maze Not",
+                "Forget Me Later",
+                "Forget Me Not",
+                "Forget Perspective",
+                "Forget The Colors",
+                "Forget Them All",
+                "Forget This",
+                "Forget Us Not",
+                "Iconic",
+                "Keypad Directionality",
+                "Kugelblitz",
+                "Multitask",
+                "OmegaDestroyer",
+                "OmegaForget",
+                "Organization",
+                "Password Destroyer",
+                "Purgatory",
+                "RPS Judging",
+                "Security Council",
+                "Shoddy Chess",
+                "Simon Forgets",
+                "Simon's Stages",
+                "Souvenir",
+                "Tallordered Keys",
+                "The Time Keeper",
+                "Timing is Everything",
+                "The Troll",
+                "Turn the Key",
+                "The Twin",
+                "Twister",
+                "Übermodule",
+                "Ultimate Custom Night",
+                "The Very Annoying Button",
+                "Whiteout",
+                "Zener Cards"
             });
-        Module.OnActivate += StartingNumber;
+        _stageCount = BombInfo.GetSolvableModuleNames().Count(i => !_ignoredModules.Contains(i));
+        for (int i = 0; i < _stageCount; i++)
+            _stageInfo.Add(MakeCells());
+        for (int i = 0; i < _stageCount; i++)
+        {
+            var str = new List<string>();
+            for (int j = 0; j < _cellCount; j++)
+                str.Add("RGB"[_stageInfo[i][j].color] + " at " + GetCoord(_stageInfo[i][j].coord));
+            Debug.LogFormat("[Floor Lights #{0}] Stage {1}: Generated {2}", _moduleId, i + 1, str.Join(", "));
+            ToggleCells(_stageInfo[i]);
+            Debug.LogFormat("[Floor Lights #{0}] Grid: {1}", _moduleId, _solutionSquares.Select(j => j ? "#" : "*").Join(""));
+        }
+        Debug.LogFormat("[Floor Lights #{0}] All stages generated.", _moduleId);
     }
 
-    IEnumerator WaitForTime()
+    private Cell[] MakeCells()
     {
-        Audio.PlaySoundAtTransform(SFX[1].name, transform);
-        Showtime.AddInteractionPunch(.2f);
-        if (Playable && Striked && ShowTime.text != "REWIND")
-        {
-            int Number = 0;
-            while (Number != 2)
-            {
-                yield return new WaitForSecondsRealtime(1f);
-                Number++;
-            }
-            ShowTime.text = "REWIND";
-            for (int x = 0; x < 100; x++)
-            {
-                TilingLighting[x].material = DefaultColor;
-            }
-            for (int z = 0; z < 8; z++)
-            {
-                TheBulbs[z].material = BulbColors[0];
-            }
-            ForwardRewind = -1;
-        }
+        var pos = Enumerable.Range(0, 36).ToArray().Shuffle().Take(_cellCount).ToArray();
+        var cellArr = new Cell[_cellCount];
+        for (int i = 0; i < cellArr.Length; i++)
+            cellArr[i] = new Cell(pos[i], Rnd.Range(0, 3));
+        return cellArr;
     }
 
-    void ShowtimeReal()
+    private void Update()
     {
-        if (ShowTime.text != "REWIND")
+        if (_stageRecovery)
+            return;
+        _currentSolves = BombInfo.GetSolvedModuleNames().Count(i => !_ignoredModules.Contains(i));
+        if (!_readyToAdvance || _currentStage == _currentSolves)
+            return;
+        if (_currentStage <= _stageCount)
+            Advance();
+    }
+
+    private void Advance()
+    {
+        _currentStage++;
+        if (_currentStage != _stageCount)
+            ScreenText[1].text = "stage " + (_currentStage + 1).ToString();
+        else
+            ScreenText[1].text = "";
+        StageAdvanceAudio.Stop();
+        if (_flashStage != null)
+            StopCoroutine(_flashStage);
+        _flashStage = StartCoroutine(FlashStage());
+    }
+
+    private IEnumerator FlashStage()
+    {
+        if (!_stageRecovery)
+            _readyToAdvance = false;
+        if (_currentStage == _stageCount)
         {
-            if (Playable)
-            {
-                Playable = false;
-                Debug.LogFormat("[Floor Lights #{0}] You submitted these toggles:", moduleId);
-                for (int y = 0; y < 10; y++)
-                {
-                    string Bardock = "";
-                    for (int z = 0; z < 10; z++)
-                    {
-                        Bardock += Guideline[y][z].ToString();
-                    }
-                    Debug.LogFormat("[Floor Lights #{0}] {1}", moduleId, Bardock);
-                }
-                Debug.LogFormat("[Floor Lights #{0}] ----------------------------------------------------------", moduleId);
-
-                ShowTime.text = "";
-                for (int x = 0; x < 100; x++)
-                {
-                    if (Guideline[x / 10][x % 10] == NumberBasing[x / 10][x % 10])
-                    {
-                        CounterOfCheck++;
-                    }
-                }
-
-                if (CounterOfCheck == 100)
-                {
-                    StartCoroutine(BulbCycle());
-                    MechaAnim = true;
-                    StartCoroutine(MechaCelebration(false));
-                }
-
-                else
-                {
-                    TheLB2 = new int[] { 0, 0, 0, 0, 0, 0, 0, 0 };
-                    for (int z = 0; z < 8; z++)
-                    {
-                        TheBulbs[z].material = BulbColors[0];
-                    }
-                    StartCoroutine(BadShow());
-                }
-            }
+            _pseudoSubmissionPhase = true;
+            _stageRecovery = false;
         }
-
+        StageAdvanceAudio.Play();
+        for (int i = 0; i < 8; i++)
+        {
+            var tempCells = MakeCells();
+            ShowCells(tempCells);
+            yield return new WaitForSeconds(0.25f);
+        }
+        if (_currentStage != _stageCount)
+        {
+            ShowCells(_stageInfo[_currentStage]);
+            yield return new WaitForSeconds(3f);
+            _readyToAdvance = true;
+        }
         else
         {
-            if (Playable)
-            {
-                if (March != null)
-                {
-                    StopCoroutine(March);
-                }
-                ForwardRewind++;
-                ThematicMusic.Stop();
-                March = StartCoroutine(ForwardMarch());
-            }
+            for (int i = 0; i < 36; i++)
+                SquareObjs[i].GetComponent<MeshRenderer>().material = SquareMats[4];
+            _submissionPhase = true;
+            ScreenText[0].text = "SHOW TIME!";
         }
     }
 
-    IEnumerator ForwardMarch()
+    private string GetCoord(int num)
     {
-        ThematicMusic.clip = SFX[2];
-        ThematicMusic.Play();
-        if (ForwardRewind < MaxStage)
-        {
-            while (ThematicMusic.isPlaying)
-            {
-                int[] Alea = Enumerable.Range(0, 100).ToArray().Shuffle();
-
-                for (int a = 0; a < 100; a++)
-                {
-                    if (a < 5)
-                    {
-                        TilingLighting[Alea[a]].material = FloorColor[UnityEngine.Random.Range(0, 3)];
-                    }
-
-                    else
-                    {
-                        TilingLighting[Alea[a]].material = DefaultColor;
-                    }
-                }
-                yield return new WaitForSecondsRealtime(0.2f);
-            }
-
-            for (int b = 0; b < 100; b++)
-            {
-                if (CorrectNumberPlacement[ForwardRewind][b] > -1)
-                {
-                    TilingLighting[b].material = FloorColor[CorrectNumberPlacement[ForwardRewind][b]];
-                }
-
-                else
-                {
-                    TilingLighting[b].material = DefaultColor;
-                }
-            }
-        }
-
-        else
-        {
-            Playable = false;
-            Striked = false;
-            while (ThematicMusic.isPlaying)
-            {
-                int[] Alea = Enumerable.Range(0, 100).ToArray().Shuffle();
-
-                for (int a = 0; a < 100; a++)
-                {
-                    if (a < 5)
-                    {
-                        TilingLighting[Alea[a]].material = FloorColor[UnityEngine.Random.Range(0, 3)];
-                    }
-
-                    else
-                    {
-                        TilingLighting[Alea[a]].material = DefaultColor;
-                    }
-                }
-                yield return new WaitForSecondsRealtime(0.2f);
-            }
-            for (int c = 0; c < 100; c++)
-            {
-                TilingLighting[c].material = Guideline[c / 10][c % 10] == 1 ? FloorColor[3] : DefaultColor;
-            }
-            Playable = true;
-            ShowTime.text = "SHOW TIME!";
-        }
+        return "ABCDEF".Substring(num % 6, 1) + "123456".Substring(num / 6, 1);
     }
 
-    IEnumerator BadShow()
+    private void ShowCells(Cell[] cells)
     {
-        Striked = true;
-        WillStrike = true;
-        Audio.PlaySoundAtTransform(SFX[3].name, transform);
-        Debug.LogFormat("[Floor Lights #{0}] That was incorrect. Module strikes.", moduleId);
-        Debug.LogFormat("[Floor Lights #{0}] The amount of correct toggles submitted: {1}", moduleId, CounterOfCheck.ToString());
-        Debug.LogFormat("[Floor Lights #{0}] ----------------------------------------------------------", moduleId);
-        for (int x = 0; x < 100; x++)
+        for (int i = 0; i < 36; i++)
         {
-            TilingLighting[x].material = FloorColor[0];
-        }
-        yield return new WaitForSecondsRealtime(0.5f);
-        for (int a = 0; a < 100; a++)
-        {
-            TilingLighting[a].material = BulbColors[0];
-        }
-        yield return new WaitForSecondsRealtime(0.5f);
-        int[] CrossMark = { 0, 1, 8, 9, 10, 11, 18, 19, 80, 81, 88, 89, 90, 91, 98, 99, 22, 23, 26, 27, 32, 33, 36, 37, 62, 63, 66, 67, 72, 73, 76, 77, 44, 45, 54, 55 };
-        for (int b = 0; b < CrossMark.Length; b++)
-        {
-            TilingLighting[CrossMark[b]].material = FloorColor[0];
-        }
-        ShowTime.text = "BAD SHOW";
-        yield return new WaitForSecondsRealtime(1f);
-        for (int c = 0; c < 100; c++)
-        {
-            TilingLighting[c].material = Guideline[c / 10][c % 10] == 1 ? FloorColor[3] : DefaultColor;
-        }
-        ShowTime.text = "SHOW TIME!";
-        Module.HandleStrike();
-        WillStrike = false;
-        for (int i = 0; i < CounterOfCheck; i++)
-        {
-            TheLB2[0]++;
-            for (int y = 0; y < 8; y++)
-            {
-                if (TheLB2[y] > 1)
-                {
-                    TheLB2[y] = TheLB2[y] - 2;
-                    TheLB2[y + 1]++;
-                }
-            }
-        }
-
-        for (int z = 0; z < 8; z++)
-        {
-            if (TheLB2[z] == 1)
-            {
-                TheBulbs[z].material = BulbColors[2];
-            }
-
+            if (!cells.Select(j => j.coord).Contains(i))
+                SquareObjs[i].GetComponent<MeshRenderer>().material = SquareMats[4];
             else
-            {
-                TheBulbs[z].material = BulbColors[0];
-            }
-        }
-        CounterOfCheck = 0;
-        Playable = true;
-    }
-
-    IEnumerator BulbCycle()
-    {
-        int[] Genecode = new int[57];
-        for (int x = 0; x < Genecode.Length; x++)
-        {
-            Genecode[x] = x % 3;
-        }
-
-        while (true)
-        {
-            for (int a = 0; a < Genecode.Length; a++)
-            {
-                Genecode[a] = (Genecode[a] + 1) % 3;
-                switch (Genecode[a])
-                {
-                    case 0:
-                        TheBulbs[a].material = FloorColor[0];
-                        break;
-                    case 1:
-                        TheBulbs[a].material = BulbColors[1];
-                        break;
-                    case 2:
-                        TheBulbs[a].material = FloorColor[2];
-                        break;
-                    default:
-                        break;
-                }
-            }
-            yield return new WaitForSecondsRealtime(0.2f);
+                SquareObjs[i].GetComponent<MeshRenderer>().material = SquareMats[cells[Array.IndexOf(cells.Select(j => j.coord).ToArray(), i)].color];
         }
     }
 
-    IEnumerator MechaCelebration(bool noLog)
+    private void ToggleCells(Cell[] cells)
     {
-        if (noLog)
+        for (int i = 0; i < cells.Length; i++)
         {
-            Debug.LogFormat("[Floor Lights #{0}] That was correct. Module solves.", moduleId);
-            Debug.LogFormat("[Floor Lights #{0}] The amount of correct toggles submitted: 100", moduleId);
-            Debug.LogFormat("[Floor Lights #{0}] ----------------------------------------------------------", moduleId);
+            var adjs = GetAdjacents(cells[i].coord, cells[i].color);
+            for (int j = 0; j < adjs.Count; j++)
+                _solutionSquares[adjs[j]] = !_solutionSquares[adjs[j]];
         }
-        int[] TL = { 0, 1, 2, 3, 4, 10, 11, 12, 13, 14, 20, 21, 22, 23, 24, 30, 31, 32, 33, 34, 40, 41, 42, 43, 44 };
-        int[] TR = { 5, 6, 7, 8, 9, 15, 16, 17, 18, 19, 25, 26, 27, 28, 29, 35, 36, 37, 38, 39, 45, 46, 47, 48, 49 };
-        int[] BL = { 50, 51, 52, 53, 54, 60, 61, 62, 63, 64, 70, 71, 72, 73, 74, 80, 81, 82, 83, 84, 90, 91, 92, 93, 94 };
-        int[] BR = { 55, 56, 57, 58, 59, 65, 66, 67, 68, 69, 75, 76, 77, 78, 79, 85, 86, 87, 88, 89, 95, 96, 97, 98, 99 };
+    }
 
-        Audio.PlaySoundAtTransform(SFX[0].name, transform);
-        for (int a = 0; a < TL.Length; a++)
+    private List<int> GetAdjacents(int num, int col)
+    {
+        var list = new List<int>();
+        list.Add(num);
+        if (col == 0 || col == 2)
         {
-            TilingLighting[TL[a]].material = FloorColor[1];
+            if (num % 6 != 0)
+                list.Add(num - 1);
+            if (num % 6 != 5)
+                list.Add(num + 1);
+            if (num / 6 != 0)
+                list.Add(num - 6);
+            if (num / 6 != 5)
+                list.Add(num + 6);
         }
-        yield return new WaitForSecondsRealtime(0.22f);
-        for (int b = 0; b < BR.Length; b++)
+        if (col == 1 || col == 2)
         {
-            TilingLighting[BR[b]].material = FloorColor[1];
+            if (num % 6 != 0 && num / 6 != 0)
+                list.Add(num - 7);
+            if (num % 6 != 0 && num / 6 != 5)
+                list.Add(num + 5);
+            if (num % 6 != 5 && num / 6 != 0)
+                list.Add(num - 5);
+            if (num % 6 != 5 && num / 6 != 5)
+                list.Add(num + 7);
         }
-        yield return new WaitForSecondsRealtime(0.22f);
-        for (int c = 0; c < TR.Length; c++)
-        {
-            TilingLighting[TR[c]].material = FloorColor[1];
-        }
-        yield return new WaitForSecondsRealtime(0.22f);
-        for (int d = 0; d < BL.Length; d++)
-        {
-            TilingLighting[BL[d]].material = FloorColor[1];
-        }
-        yield return new WaitForSecondsRealtime(0.46f);
+        return list;
+    }
+
+    private IEnumerator SolveAnimation()
+    {
+        Audio.PlaySoundAtTransform("Floor Victory", transform);
+        var TL = new int[] { 0, 1, 2, 6, 7, 8, 12, 13, 14 };
+        var TR = new int[] { 3, 4, 5, 9, 10, 11, 15, 16, 17 };
+        var BL = new int[] { 18, 19, 20, 24, 25, 26, 30, 31, 32 };
+        var BR = new int[] { 21, 22, 23, 27, 28, 29, 33, 34, 35 };
+        var solvePic = new int[] { 7, 10, 19, 22, 26, 27 };
+        for (int i = 0; i < TL.Length; i++)
+            SquareObjs[TL[i]].GetComponent<MeshRenderer>().material = SquareMats[1];
+        yield return new WaitForSeconds(0.22f);
+        for (int i = 0; i < TR.Length; i++)
+            SquareObjs[TR[i]].GetComponent<MeshRenderer>().material = SquareMats[1];
+        yield return new WaitForSeconds(0.22f);
+        for (int i = 0; i < BL.Length; i++)
+            SquareObjs[BL[i]].GetComponent<MeshRenderer>().material = SquareMats[1];
+        yield return new WaitForSeconds(0.22f);
+        for (int i = 0; i < BR.Length; i++)
+            SquareObjs[BR[i]].GetComponent<MeshRenderer>().material = SquareMats[1];
+        yield return new WaitForSeconds(0.46f);
+        ScreenText[0].text = "GOOD SHOW";
+        ScreenText[1].text = "";
+        _trueModuleSolved = true;
         Module.HandlePass();
-        ModuleSolved = true;
-        RealPass = true;
-        ShowTime.text = MaxStage == 0 ? "PLAY TIME" : "GOOD SHOW";
-        int[] Darken = { 5, 4, 15, 14, 25, 24, 35, 34, 45, 44, 55, 54, 85, 84, 95, 94 };
-        for (int i = 0; i < Darken.Length; i++)
-        {
-            TilingLighting[Darken[i]].material = BulbColors[0];
-        }
-
-        yield return new WaitForSecondsRealtime(1.75f);
-        int[] Genecode = new int[100];
-        for (int x = 0; x < Genecode.Length; x++)
-        {
-            Genecode[x] = x % 4;
-            TilingLighting[x].material = DefaultColor;
-        }
-
-        yield return new WaitForSecondsRealtime(0.05f);
+        for (int i = 0; i < PartyText.Length; i++)
+            PartyText[i].gameObject.SetActive(true);
+        for (int i = 0; i < solvePic.Length; i++)
+            SquareObjs[solvePic[i]].GetComponent<MeshRenderer>().material = SquareMats[5];
+        yield return new WaitForSeconds(1.75f);
+        int ix = 0;
+        var rndShuff = Enumerable.Range(0, 4).ToArray().Shuffle();
+        var txtColors = new Color32[3] { new Color32(255, 0, 0, 255), new Color32(0, 0, 255, 255), new Color32(255, 255, 255, 255) };
         while (true)
         {
-            for (int a = 0; a < Genecode.Length; a++)
-            {
-                Genecode[a] = ((Genecode[a] - 1) + 4) % 4;
-                switch (Genecode[a])
-                {
-                    case 0:
-                        TilingLighting[a].material = FloorColor[0];
-                        break;
-                    case 1:
-                        TilingLighting[a].material = FloorColor[3];
-                        break;
-                    case 2:
-                        TilingLighting[a].material = FloorColor[1];
-                        break;
-                    case 3:
-                        TilingLighting[a].material = FloorColor[2];
-                        break;
-                    default:
-                        break;
-                }
-            }
-            yield return new WaitForSecondsRealtime(0.3f);
+            ix++;
+            for (int r = 0; r < 6; r++)
+                for (int c = 0; c < 6; c++)
+                    SquareObjs[r * 6 + c].GetComponent<MeshRenderer>().material = SquareMats[rndShuff[(ix + r + c) % 4]];
+            for (int t = 0; t < 5; t++)
+                PartyText[t].color = txtColors[(t + ix) % 3];
+            yield return new WaitForSeconds(0.3f);
         }
     }
 
-    void StartingNumber()
+    private IEnumerator StrikeAnimation(int count)
     {
-        MaxStage = Bomb.GetSolvableModuleNames().Where(a => !IgnoredModules.Contains(a)).Count();
-        Mackerel = StartCoroutine(Advancement());
+        var x = new int[] { 0, 5, 7, 10, 14, 15, 20, 21, 25, 28, 30, 35 };
+        ScreenText[0].text = "BAD SHOW";
+        Audio.PlaySoundAtTransform("Incorrect", transform);
+        for (int i = 0; i < 36; i++)
+            SquareObjs[i].GetComponent<MeshRenderer>().material = SquareMats[0];
+        yield return new WaitForSeconds(0.5f);
+        for (int i = 0; i < 36; i++)
+            SquareObjs[i].GetComponent<MeshRenderer>().material = SquareMats[5];
+        yield return new WaitForSeconds(0.5f);
+        for (int i = 0; i < 36; i++)
+            SquareObjs[i].GetComponent<MeshRenderer>().material = SquareMats[x.Contains(i) ? 0 : 5];
+        yield return new WaitForSeconds(1f);
+        Module.HandleStrike();
+        for (int i = 0; i < 36; i++)
+            SquareObjs[i].GetComponent<MeshRenderer>().material = SquareMats[_inputSquares[i] ? 3 : 4];
+        ScreenText[0].text = "SHOW TIME!";
+        ScreenText[1].text = count.ToString() + " of 36";
+        _isAnimating = false;
     }
 
-    void Update()
+#pragma warning disable 0414
+    private readonly string TwitchHelpMessage = "!{0} set ##..###.....# [set whole grid; # = yellow, . = black. Must be of length 36.] | !{0} submit [Submits the input.]\n!{0} rewind [Enters stage recovery.] | !{0} advance [Goes to next stage of stage recovery.] | !{0} skip [Skips stage recovery, goes back to submission phase.]";
+#pragma warning restore 0414
+
+    private IEnumerator ProcessTwitchCommand(string command)
     {
-        if (ActualStage < Bomb.GetSolvedModuleNames().Where(a => !IgnoredModules.Contains(a)).Count() && !ModuleSolved)
+        Match m;
+        m = Regex.Match(command, @"^\s*(?:set)\s+([\.#]{36})\s*$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        if (m.Success)
         {
-            ActualStage++;
-            if (Mackerel != null)
+            if (!_submissionPhase)
             {
-                StopCoroutine(Mackerel);
-            }
-            ThematicMusic.Stop();
-            Mackerel = StartCoroutine(Advancement());
-        }
-
-    }
-
-    void TilingToggle(int Button)
-    {
-        Lighting[Button].AddInteractionPunch(.2f);
-        Audio.PlaySoundAtTransform(SFX[1].name, transform);
-        if (Playable && ShowTime.text != "REWIND")
-        {
-            Guideline[Button / 10][Button % 10] = (Guideline[Button / 10][Button % 10] + 1) % 2;
-            TilingLighting[Button].material = Guideline[Button / 10][Button % 10] == 1 ? FloorColor[3] : DefaultColor;
-        }
-    }
-
-    IEnumerator Advancement()
-    {
-        RoundNumber++;
-        if (ActualStage == MaxStage || RoundNumber == 144115188075855871)
-        {
-            if (MaxStage == 0)
-            {
-                Playable = false;
-                StartCoroutine(BulbCycle());
-                MechaAnim = true;
-                StartCoroutine(MechaCelebration(false));
-                ShowTime.text = "";
-                Debug.LogFormat("[Floor Lights #{0}] Unable to generate stages. Play time is in effect.", moduleId);
-            }
-
-            else
-            {
-                for (int z = 0; z < TheLB.Count(); z++)
-                {
-                    TheBulbs[z].material = BulbColors[0];
-                }
-
-                Debug.LogFormat("[Floor Lights #{0}] Correct toggles to submit:", moduleId);
-                for (int y = 0; y < 10; y++)
-                {
-                    string Bardock = "";
-                    for (int z = 0; z < 10; z++)
-                    {
-                        Bardock += NumberBasing[y][z].ToString();
-                    }
-                    Debug.LogFormat("[Floor Lights #{0}] {1}", moduleId, Bardock);
-                }
-                Debug.LogFormat("[Floor Lights #{0}] ----------------------------------------------------------", moduleId);
-
-                ThematicMusic.clip = SFX[2];
-                ThematicMusic.Play();
-                while (ThematicMusic.isPlaying)
-                {
-                    int[] Alea = Enumerable.Range(0, 100).ToArray().Shuffle();
-                    for (int a = 0; a < 100; a++)
-                    {
-                        if (a < 5)
-                        {
-                            TilingLighting[Alea[a]].material = FloorColor[UnityEngine.Random.Range(0, 3)];
-                        }
-
-                        else
-                        {
-                            TilingLighting[Alea[a]].material = DefaultColor;
-                        }
-                    }
-                    yield return new WaitForSecondsRealtime(0.2f);
-                }
-
-                for (int x = 0; x < 100; x++)
-                {
-                    TilingLighting[x].material = DefaultColor;
-                }
-                Playable = true;
-            }
-        }
-
-        else if (RoundNumber == 144115188075855871)
-        {
-            for (int z = 0; z < TheLB.Count(); z++)
-            {
-                TheBulbs[z].material = BulbColors[0];
-            }
-
-            Debug.LogFormat("[Floor Lights #{0}] Correct toggles to submit:", moduleId);
-            for (int y = 0; y < 10; y++)
-            {
-                string Bardock = "";
-                for (int z = 0; z < 10; z++)
-                {
-                    Bardock += NumberBasing[y][z].ToString();
-                }
-                Debug.LogFormat("[Floor Lights #{0}] {1}", moduleId, Bardock);
-            }
-            Debug.LogFormat("[Floor Lights #{0}] ----------------------------------------------------------", moduleId);
-
-            ThematicMusic.clip = SFX[2];
-            ThematicMusic.Play();
-            while (ThematicMusic.isPlaying)
-            {
-                int[] Alea = Enumerable.Range(0, 100).ToArray().Shuffle();
-                for (int a = 0; a < 100; a++)
-                {
-                    if (a < 5)
-                    {
-                        TilingLighting[Alea[a]].material = FloorColor[UnityEngine.Random.Range(0, 3)];
-                    }
-
-                    else
-                    {
-                        TilingLighting[Alea[a]].material = DefaultColor;
-                    }
-                }
-            }
-
-            for (int x = 0; x < 100; x++)
-            {
-                TilingLighting[x].material = DefaultColor;
-            }
-
-            Playable = true;
-        }
-
-        else
-        {
-            int[] Mocha = new int[100];
-            int[] Secha = Enumerable.Range(0, 100).ToArray().Shuffle();
-            TheLB[0]++;
-            List<int> Callous = new List<int>();
-            for (int e = 0; e < 8; e++)
-            {
-                Callous.Add(Secha[e]);
-            }
-            Callous.Sort();
-            string ColorLights = "";
-
-            for (int y = 0; y < TheLB.Count(); y++)
-            {
-                if (TheLB[y] > 1)
-                {
-                    TheLB[y] = TheLB[y] - 2;
-                    TheLB[y + 1]++;
-                }
-            }
-
-            for (int z = 0; z < TheLB.Count(); z++)
-            {
-                TheBulbs[z].material = BulbColors[TheLB[z]];
-            }
-
-            int Monty = 0;
-            Debug.LogFormat("[Floor Lights #{0}] Tile patterns for Stage {1}:", moduleId, (ActualStage + 1).ToString());
-            for (int x = 0; x < 100; x++)
-            {
-                if (Monty != 5 && x == Callous[Monty])
-                {
-                    int Heckel = UnityEngine.Random.Range(0, 3);
-                    Mocha[x] = Heckel;
-                    Monty++;
-                    if (Heckel == 0)
-                    {
-                        ColorLights += "R";
-                        if (x / 10 == 0)
-                        {
-                            if (x == 0)
-                            {
-                                NumberBasing[0][0] = (NumberBasing[0][0] + 1) % 2;
-                                NumberBasing[0][1] = (NumberBasing[0][1] + 1) % 2;
-                                NumberBasing[1][0] = (NumberBasing[1][0] + 1) % 2;
-                            }
-
-                            else if (x == 9)
-                            {
-                                NumberBasing[0][9] = (NumberBasing[0][9] + 1) % 2;
-                                NumberBasing[0][8] = (NumberBasing[0][8] + 1) % 2;
-                                NumberBasing[1][9] = (NumberBasing[1][9] + 1) % 2;
-                            }
-
-                            else
-                            {
-                                NumberBasing[0][x % 10] = (NumberBasing[0][x % 10] + 1) % 2;
-                                NumberBasing[0][(x % 10) + 1] = (NumberBasing[0][(x % 10) + 1] + 1) % 2;
-                                NumberBasing[0][(x % 10) - 1] = (NumberBasing[0][(x % 10) - 1] + 1) % 2;
-                                NumberBasing[1][x % 10] = (NumberBasing[1][x % 10] + 1) % 2;
-                            }
-                        }
-
-                        else if (x / 10 == 9)
-                        {
-                            if (x == 90)
-                            {
-                                NumberBasing[9][0] = (NumberBasing[9][0] + 1) % 2;
-                                NumberBasing[9][1] = (NumberBasing[9][1] + 1) % 2;
-                                NumberBasing[8][0] = (NumberBasing[8][0] + 1) % 2;
-                            }
-
-                            else if (x == 99)
-                            {
-                                NumberBasing[9][9] = (NumberBasing[9][9] + 1) % 2;
-                                NumberBasing[9][8] = (NumberBasing[9][8] + 1) % 2;
-                                NumberBasing[8][9] = (NumberBasing[8][9] + 1) % 2;
-                            }
-
-                            else
-                            {
-                                NumberBasing[9][x % 10] = (NumberBasing[9][x % 10] + 1) % 2;
-                                NumberBasing[9][(x % 10) + 1] = (NumberBasing[9][(x % 10) + 1] + 1) % 2;
-                                NumberBasing[9][(x % 10) - 1] = (NumberBasing[9][(x % 10) - 1] + 1) % 2;
-                                NumberBasing[8][x % 10] = (NumberBasing[8][x % 10] + 1) % 2;
-                            }
-                        }
-
-                        else if (x % 10 == 0)
-                        {
-                            if (x == 0)
-                            {
-                                NumberBasing[0][0] = (NumberBasing[0][0] + 1) % 2;
-                                NumberBasing[0][1] = (NumberBasing[0][1] + 1) % 2;
-                                NumberBasing[1][0] = (NumberBasing[1][0] + 1) % 2;
-                            }
-
-                            else if (x == 90)
-                            {
-                                NumberBasing[9][0] = (NumberBasing[9][0] + 1) % 2;
-                                NumberBasing[9][1] = (NumberBasing[9][1] + 1) % 2;
-                                NumberBasing[8][0] = (NumberBasing[8][0] + 1) % 2;
-                            }
-
-                            else
-                            {
-                                NumberBasing[x / 10][0] = (NumberBasing[x / 10][0] + 1) % 2;
-                                NumberBasing[(x / 10) + 1][0] = (NumberBasing[(x / 10) + 1][0] + 1) % 2;
-                                NumberBasing[(x / 10) - 1][0] = (NumberBasing[(x / 10) - 1][0] + 1) % 2;
-                                NumberBasing[x / 10][1] = (NumberBasing[x / 10][1] + 1) % 2;
-                            }
-                        }
-
-                        else if (x % 10 == 9)
-                        {
-                            if (x == 9)
-                            {
-                                NumberBasing[0][9] = (NumberBasing[0][9] + 1) % 2;
-                                NumberBasing[0][8] = (NumberBasing[0][8] + 1) % 2;
-                                NumberBasing[1][9] = (NumberBasing[1][9] + 1) % 2;
-                            }
-
-                            else if (x == 99)
-                            {
-                                NumberBasing[9][9] = (NumberBasing[9][9] + 1) % 2;
-                                NumberBasing[9][8] = (NumberBasing[9][8] + 1) % 2;
-                                NumberBasing[8][9] = (NumberBasing[8][9] + 1) % 2;
-                            }
-
-                            else
-                            {
-                                NumberBasing[x / 10][9] = (NumberBasing[x / 10][9] + 1) % 2;
-                                NumberBasing[(x / 10) + 1][9] = (NumberBasing[(x / 10) + 1][9] + 1) % 2;
-                                NumberBasing[(x / 10) - 1][9] = (NumberBasing[(x / 10) - 1][9] + 1) % 2;
-                                NumberBasing[x / 10][8] = (NumberBasing[x / 10][8] + 1) % 2;
-                            }
-                        }
-
-                        else
-                        {
-                            NumberBasing[x / 10][x % 10] = (NumberBasing[x / 10][x % 10] + 1) % 2;
-                            NumberBasing[x / 10][(x % 10) + 1] = (NumberBasing[x / 10][(x % 10) + 1] + 1) % 2;
-                            NumberBasing[x / 10][(x % 10) - 1] = (NumberBasing[x / 10][(x % 10) - 1] + 1) % 2;
-                            NumberBasing[(x / 10) + 1][x % 10] = (NumberBasing[(x / 10) + 1][x % 10] + 1) % 2;
-                            NumberBasing[(x / 10) - 1][x % 10] = (NumberBasing[(x / 10) - 1][x % 10] + 1) % 2;
-                        }
-                    }
-
-                    else if (Heckel == 1)
-                    {
-                        ColorLights += "G";
-                        if (x / 10 == 0)
-                        {
-                            if (x == 0)
-                            {
-                                NumberBasing[0][0] = (NumberBasing[0][0] + 1) % 2;
-                                NumberBasing[1][1] = (NumberBasing[1][1] + 1) % 2;
-                            }
-
-                            else if (x == 9)
-                            {
-                                NumberBasing[0][9] = (NumberBasing[0][9] + 1) % 2;
-                                NumberBasing[1][8] = (NumberBasing[1][8] + 1) % 2;
-                            }
-
-                            else
-                            {
-                                NumberBasing[0][x % 10] = (NumberBasing[0][x % 10] + 1) % 2;
-                                NumberBasing[1][(x % 10) + 1] = (NumberBasing[1][(x % 10) + 1] + 1) % 2;
-                                NumberBasing[1][(x % 10) - 1] = (NumberBasing[1][(x % 10) - 1] + 1) % 2;
-                            }
-                        }
-
-                        else if (x / 10 == 9)
-                        {
-                            if (x == 90)
-                            {
-                                NumberBasing[9][0] = (NumberBasing[9][0] + 1) % 2;
-                                NumberBasing[8][1] = (NumberBasing[8][1] + 1) % 2;
-                            }
-
-                            else if (x == 99)
-                            {
-                                NumberBasing[9][9] = (NumberBasing[9][9] + 1) % 2;
-                                NumberBasing[8][8] = (NumberBasing[8][8] + 1) % 2;
-                            }
-
-                            else
-                            {
-                                NumberBasing[9][x % 10] = (NumberBasing[9][x % 10] + 1) % 2;
-                                NumberBasing[8][(x % 10) + 1] = (NumberBasing[8][(x % 10) + 1] + 1) % 2;
-                                NumberBasing[8][(x % 10) - 1] = (NumberBasing[8][(x % 10) - 1] + 1) % 2;
-                            }
-                        }
-
-                        else if (x % 10 == 0)
-                        {
-                            if (x == 0)
-                            {
-                                NumberBasing[0][0] = (NumberBasing[0][0] + 1) % 2;
-                                NumberBasing[1][1] = (NumberBasing[1][1] + 1) % 2;
-                            }
-
-                            else if (x == 90)
-                            {
-                                NumberBasing[9][0] = (NumberBasing[9][0] + 1) % 2;
-                                NumberBasing[8][1] = (NumberBasing[8][1] + 1) % 2;
-                            }
-
-                            else
-                            {
-                                NumberBasing[x / 10][0] = (NumberBasing[x / 10][0] + 1) % 2;
-                                NumberBasing[(x / 10) + 1][1] = (NumberBasing[(x / 10) + 1][1] + 1) % 2;
-                                NumberBasing[(x / 10) - 1][1] = (NumberBasing[(x / 10) - 1][1] + 1) % 2;
-                            }
-                        }
-
-                        else if (x % 10 == 9)
-                        {
-                            if (x == 9)
-                            {
-                                NumberBasing[0][9] = (NumberBasing[0][9] + 1) % 2;
-                                NumberBasing[1][8] = (NumberBasing[1][8] + 1) % 2;
-                            }
-
-                            else if (x == 99)
-                            {
-                                NumberBasing[9][9] = (NumberBasing[9][9] + 1) % 2;
-                                NumberBasing[8][8] = (NumberBasing[8][8] + 1) % 2;
-                            }
-
-                            else
-                            {
-                                NumberBasing[x / 10][9] = (NumberBasing[x / 10][9] + 1) % 2;
-                                NumberBasing[(x / 10) + 1][8] = (NumberBasing[(x / 10) + 1][8] + 1) % 2;
-                                NumberBasing[(x / 10) - 1][8] = (NumberBasing[(x / 10) - 1][8] + 1) % 2;
-                            }
-                        }
-
-                        else
-                        {
-                            NumberBasing[x / 10][x % 10] = (NumberBasing[x / 10][x % 10] + 1) % 2;
-                            NumberBasing[(x / 10) + 1][(x % 10) + 1] = (NumberBasing[(x / 10) + 1][(x % 10) + 1] + 1) % 2;
-                            NumberBasing[(x / 10) - 1][(x % 10) - 1] = (NumberBasing[(x / 10) - 1][(x % 10) - 1] + 1) % 2;
-                            NumberBasing[(x / 10) + 1][(x % 10) - 1] = (NumberBasing[(x / 10) + 1][(x % 10) - 1] + 1) % 2;
-                            NumberBasing[(x / 10) - 1][(x % 10) + 1] = (NumberBasing[(x / 10) - 1][(x % 10) + 1] + 1) % 2;
-                        }
-                    }
-
-                    else
-                    {
-                        ColorLights += "B";
-                        if (x / 10 == 0)
-                        {
-                            if (x == 0)
-                            {
-                                NumberBasing[0][0] = (NumberBasing[0][0] + 1) % 2;
-                                NumberBasing[0][1] = (NumberBasing[0][1] + 1) % 2;
-                                NumberBasing[1][0] = (NumberBasing[1][0] + 1) % 2;
-                                NumberBasing[1][1] = (NumberBasing[1][1] + 1) % 2;
-                            }
-
-                            else if (x == 9)
-                            {
-                                NumberBasing[0][9] = (NumberBasing[0][9] + 1) % 2;
-                                NumberBasing[0][8] = (NumberBasing[0][8] + 1) % 2;
-                                NumberBasing[1][9] = (NumberBasing[1][9] + 1) % 2;
-                                NumberBasing[1][8] = (NumberBasing[1][8] + 1) % 2;
-                            }
-
-                            else
-                            {
-                                NumberBasing[0][x % 10] = (NumberBasing[0][x % 10] + 1) % 2;
-                                NumberBasing[0][(x % 10) + 1] = (NumberBasing[0][(x % 10) + 1] + 1) % 2;
-                                NumberBasing[0][(x % 10) - 1] = (NumberBasing[0][(x % 10) - 1] + 1) % 2;
-                                NumberBasing[1][(x % 10) + 1] = (NumberBasing[1][(x % 10) + 1] + 1) % 2;
-                                NumberBasing[1][(x % 10) - 1] = (NumberBasing[1][(x % 10) - 1] + 1) % 2;
-                                NumberBasing[1][x % 10] = (NumberBasing[1][x % 10] + 1) % 2;
-                            }
-                        }
-
-                        else if (x / 10 == 9)
-                        {
-                            if (x == 90)
-                            {
-                                NumberBasing[9][0] = (NumberBasing[9][0] + 1) % 2;
-                                NumberBasing[9][1] = (NumberBasing[9][1] + 1) % 2;
-                                NumberBasing[8][0] = (NumberBasing[8][0] + 1) % 2;
-                                NumberBasing[8][1] = (NumberBasing[8][1] + 1) % 2;
-                            }
-
-                            else if (x == 99)
-                            {
-                                NumberBasing[9][9] = (NumberBasing[9][9] + 1) % 2;
-                                NumberBasing[9][8] = (NumberBasing[9][8] + 1) % 2;
-                                NumberBasing[8][9] = (NumberBasing[8][9] + 1) % 2;
-                                NumberBasing[8][8] = (NumberBasing[8][8] + 1) % 2;
-                            }
-
-                            else
-                            {
-                                NumberBasing[9][x % 10] = (NumberBasing[9][x % 10] + 1) % 2;
-                                NumberBasing[9][(x % 10) + 1] = (NumberBasing[9][(x % 10) + 1] + 1) % 2;
-                                NumberBasing[9][(x % 10) - 1] = (NumberBasing[9][(x % 10) - 1] + 1) % 2;
-                                NumberBasing[8][(x % 10) + 1] = (NumberBasing[8][(x % 10) + 1] + 1) % 2;
-                                NumberBasing[8][(x % 10) - 1] = (NumberBasing[8][(x % 10) - 1] + 1) % 2;
-                                NumberBasing[8][x % 10] = (NumberBasing[8][x % 10] + 1) % 2;
-                            }
-                        }
-
-                        else if (x % 10 == 0)
-                        {
-                            if (x == 0)
-                            {
-                                NumberBasing[0][0] = (NumberBasing[0][0] + 1) % 2;
-                                NumberBasing[0][1] = (NumberBasing[0][1] + 1) % 2;
-                                NumberBasing[1][0] = (NumberBasing[1][0] + 1) % 2;
-                                NumberBasing[1][1] = (NumberBasing[1][1] + 1) % 2;
-                            }
-
-                            else if (x == 90)
-                            {
-                                NumberBasing[9][0] = (NumberBasing[9][0] + 1) % 2;
-                                NumberBasing[9][1] = (NumberBasing[9][1] + 1) % 2;
-                                NumberBasing[8][0] = (NumberBasing[8][0] + 1) % 2;
-                                NumberBasing[8][1] = (NumberBasing[8][1] + 1) % 2;
-                            }
-
-                            else
-                            {
-                                NumberBasing[x / 10][0] = (NumberBasing[x / 10][0] + 1) % 2;
-                                NumberBasing[(x / 10) + 1][0] = (NumberBasing[(x / 10) + 1][0] + 1) % 2;
-                                NumberBasing[(x / 10) - 1][0] = (NumberBasing[(x / 10) - 1][0] + 1) % 2;
-                                NumberBasing[(x / 10) + 1][1] = (NumberBasing[(x / 10) + 1][1] + 1) % 2;
-                                NumberBasing[(x / 10) - 1][1] = (NumberBasing[(x / 10) - 1][1] + 1) % 2;
-                                NumberBasing[x / 10][1] = (NumberBasing[x / 10][1] + 1) % 2;
-                            }
-                        }
-
-                        else if (x % 10 == 9)
-                        {
-                            if (x == 9)
-                            {
-                                NumberBasing[0][9] = (NumberBasing[0][9] + 1) % 2;
-                                NumberBasing[0][8] = (NumberBasing[0][8] + 1) % 2;
-                                NumberBasing[1][9] = (NumberBasing[1][9] + 1) % 2;
-                                NumberBasing[1][8] = (NumberBasing[1][8] + 1) % 2;
-                            }
-
-                            else if (x == 99)
-                            {
-                                NumberBasing[9][9] = (NumberBasing[9][9] + 1) % 2;
-                                NumberBasing[9][8] = (NumberBasing[9][8] + 1) % 2;
-                                NumberBasing[8][9] = (NumberBasing[8][9] + 1) % 2;
-                                NumberBasing[8][8] = (NumberBasing[8][8] + 1) % 2;
-                            }
-
-                            else
-                            {
-                                NumberBasing[x / 10][9] = (NumberBasing[x / 10][9] + 1) % 2;
-                                NumberBasing[(x / 10) + 1][9] = (NumberBasing[(x / 10) + 1][9] + 1) % 2;
-                                NumberBasing[(x / 10) - 1][9] = (NumberBasing[(x / 10) - 1][9] + 1) % 2;
-                                NumberBasing[(x / 10) + 1][8] = (NumberBasing[(x / 10) + 1][8] + 1) % 2;
-                                NumberBasing[(x / 10) - 1][8] = (NumberBasing[(x / 10) - 1][8] + 1) % 2;
-                                NumberBasing[x / 10][8] = (NumberBasing[x / 10][8] + 1) % 2;
-                            }
-                        }
-
-                        else
-                        {
-                            NumberBasing[x / 10][x % 10] = (NumberBasing[x / 10][x % 10] + 1) % 2;
-                            NumberBasing[x / 10][(x % 10) + 1] = (NumberBasing[x / 10][(x % 10) + 1] + 1) % 2;
-                            NumberBasing[x / 10][(x % 10) - 1] = (NumberBasing[x / 10][(x % 10) - 1] + 1) % 2;
-                            NumberBasing[(x / 10) + 1][x % 10] = (NumberBasing[(x / 10) + 1][x % 10] + 1) % 2;
-                            NumberBasing[(x / 10) - 1][x % 10] = (NumberBasing[(x / 10) - 1][x % 10] + 1) % 2;
-                            NumberBasing[(x / 10) + 1][(x % 10) + 1] = (NumberBasing[(x / 10) + 1][(x % 10) + 1] + 1) % 2;
-                            NumberBasing[(x / 10) - 1][(x % 10) - 1] = (NumberBasing[(x / 10) - 1][(x % 10) - 1] + 1) % 2;
-                            NumberBasing[(x / 10) + 1][(x % 10) - 1] = (NumberBasing[(x / 10) + 1][(x % 10) - 1] + 1) % 2;
-                            NumberBasing[(x / 10) - 1][(x % 10) + 1] = (NumberBasing[(x / 10) - 1][(x % 10) + 1] + 1) % 2;
-                        }
-                    }
-                }
-
-                else
-                {
-                    ColorLights += "*";
-                    Mocha[x] = -1;
-                }
-
-                if (x % 10 == 9)
-                {
-                    Debug.LogFormat("[Floor Lights #{0}] {1}", moduleId, ColorLights);
-                    ColorLights = "";
-                }
-            }
-
-            CorrectNumberPlacement.Add(Mocha);
-
-            Debug.LogFormat("[Floor Lights #{0}] Correct toggle patterns for this stage:", moduleId);
-            for (int y = 0; y < 10; y++)
-            {
-                string Bardock = "";
-                for (int z = 0; z < 10; z++)
-                {
-                    Bardock += NumberBasing[y][z].ToString();
-                }
-                Debug.LogFormat("[Floor Lights #{0}] {1}", moduleId, Bardock);
-            }
-            Debug.LogFormat("[Floor Lights #{0}] ----------------------------------------------------------", moduleId);
-
-            ThematicMusic.clip = SFX[2];
-            ThematicMusic.Play();
-            while (ThematicMusic.isPlaying)
-            {
-                int[] Alea = Enumerable.Range(0, 100).ToArray().Shuffle();
-                for (int a = 0; a < 100; a++)
-                {
-                    if (a < 5)
-                    {
-                        TilingLighting[Alea[a]].material = FloorColor[UnityEngine.Random.Range(0, 3)];
-                    }
-
-                    else
-                    {
-                        TilingLighting[Alea[a]].material = DefaultColor;
-                    }
-                }
-                yield return new WaitForSecondsRealtime(0.2f);
-            }
-
-            for (int b = 0; b < 100; b++)
-            {
-                if (Mocha[b] > -1)
-                {
-                    TilingLighting[b].material = FloorColor[Mocha[b]];
-                }
-
-                else
-                {
-                    TilingLighting[b].material = DefaultColor;
-                }
-            }
-        }
-    }
-
-    //twitch plays
-#pragma warning disable 414
-    private readonly string TwitchHelpMessage = @"To press a certain tile(s) on the platform, use the command !{0} tile [1-100] (Multiple tiles can be pressed using the command) | To submit the answer given on the module, use the command !{0} submit | To perform a rewind (if you are able to), use the command !{0} rewind | To move forward on a stage during rewind, use the command !{0} advance";
-#pragma warning restore 414
-
-    IEnumerator ProcessTwitchCommand(string command)
-    {
-        string[] parameters = command.Split(' ');
-        if (!Playable)
-        {
-            yield return "sendtochaterror You can not interact with the module currently. The command was not processed.";
-            yield break;
-        }
-
-        if (Regex.IsMatch(command, @"^\s*submit\s*$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant))
-        {
-            yield return null;
-            if (ShowTime.text == "REWIND")
-            {
-                yield return "sendtochaterror You are currently on rewind. The command was not processed.";
+                yield return "sendtochaterror You are not in submission phase. You may not press any cells.";
                 yield break;
             }
-            yield return "solve";
+            yield return null;
+            var arr = m.Groups[1].Value.Select(i => i == '#' ? true : false).ToArray();
+            for (int i = 0; i < 36; i++)
+            {
+                if (_inputSquares[i] != arr[i])
+                {
+                    SquareSels[i].OnInteract();
+                    yield return new WaitForSeconds(0.05f);
+                }
+            }
+            yield break;
+        }
+        m = Regex.Match(command, @"^\s*submit\s*$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        if (m.Success)
+        {
+            if (_stageRecovery)
+            {
+                yield return "sendtochaterror You are currently in stage recovery!";
+                yield break;
+            }
+            if (_currentStage != _stageCount)
+            {
+                yield return "sendtochaterror Not all stages have been shown yet?";
+                yield break;
+            }
+            yield return null;
             yield return "strike";
-            Showtime.OnInteract();
-            yield return new WaitForSecondsRealtime(0.1f);
-            Showtime.OnInteractEnded();
+            yield return "solve";
+            ShowTimeSel.OnInteract();
+            yield return new WaitForSeconds(0.1f);
+            ShowTimeSel.OnInteractEnded();
+            yield return new WaitForSeconds(0.1f);
         }
-
-        if (Regex.IsMatch(command, @"^\s*rewind\s*$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant))
+        m = Regex.Match(command, @"^\s*rewind\s*", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        if (m.Success)
         {
+            if (!_hasStruck)
+            {
+                yield return "sendtochaterror You have not struck yet, and cannot rewind to enter stage recovery!";
+                yield break;
+            }
+            if (_stageRecovery)
+            {
+                yield return "sendtochaterror You are already in stage recovery!";
+                yield break;
+            }
             yield return null;
-            if (!Striked)
-            {
-                yield return "sendtochaterror You are unable to rewind currently. The command was not processed.";
-                yield break;
-            }
-
-            if (ShowTime.text == "REWIND")
-            {
-                yield return "sendtochaterror You are currently on rewind. The command was not processed.";
-                yield break;
-            }
-            Showtime.OnInteract();
-            yield return new WaitForSecondsRealtime(2.5f);
-            Showtime.OnInteractEnded();
-        }
-
-        if (Regex.IsMatch(command, @"^\s*advance\s*$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant))
-        {
-            yield return null;
-            if (ShowTime.text != "REWIND")
-            {
-                yield return "sendtochaterror You are currently not on rewind. The command was not processed.";
-                yield break;
-            }
-            Showtime.OnInteract();
-            yield return new WaitForSecondsRealtime(0.1f);
-            Showtime.OnInteractEnded();
-        }
-
-        if (Regex.IsMatch(parameters[0], @"^\s*tile\s*$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant))
-        {
-            yield return null;
-            if (parameters.Length < 2)
-            {
-                yield return "sendtochaterror Parameter length invalid. The command was not processed.";
-                yield break;
-            }
-
-            for (int x = 1; x < parameters.Length; x++)
-            {
-                yield return "trycancel The command to perform the action was cancelled due to a cancel request.";
-                if (ShowTime.text == "REWIND")
-                {
-                    yield return "sendtochaterror You are currently on rewind. The command was halted.";
-                    yield break;
-                }
-
-                int Ham;
-                if (!Int32.TryParse(parameters[x], out Ham))
-                {
-                    yield return "sendtochaterror Tile position being sent contains is invalid. The command was halted.";
-                    yield break;
-                }
-
-                if (Int32.Parse(parameters[x]) < 1 || Int32.Parse(parameters[x]) > 100)
-                {
-                    yield return "sendtochaterror Tile position being is not between [1-100]. The command was halted.";
-                    yield break;
-                }
-                Lighting[Int32.Parse(parameters[x]) - 1].OnInteract();
-                yield return new WaitForSecondsRealtime(0.05f);
-            }
-        }
-
-    }
-
-    IEnumerator TwitchHandleForcedSolve()
-    {
-        if (WillStrike)
-        {
-            StopAllCoroutines();
-            StartCoroutine(MechaCelebration(true));
+            ShowTimeSel.OnInteract();
+            yield return new WaitForSeconds(2.5f);
+            ShowTimeSel.OnInteractEnded();
+            yield return new WaitForSeconds(0.1f);
             yield break;
         }
-        if (!MechaAnim)
+        m = Regex.Match(command, @"^\s*advance\s*$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        if (m.Success)
         {
-            if (ShowTime.text == "REWIND")
+            if (!_stageRecovery)
             {
-                while (ForwardRewind < MaxStage)
-                {
-                    Showtime.OnInteract();
-                    yield return new WaitForSecondsRealtime(0.1f);
-                    Showtime.OnInteractEnded();
-                }
+                yield return "sendtochaterror You are not in stage recovery! You may not advance.";
+                yield break;
             }
-            while (!Playable) yield return true;
-            for (int x = 0; x < 100; x++)
-            {
-                if (Guideline[x / 10][x % 10] != NumberBasing[x / 10][x % 10])
-                {
-                    Lighting[x].OnInteract();
-                    yield return new WaitForSecondsRealtime(0.05f);
-                }
-            }
-            Showtime.OnInteract();
-            yield return new WaitForSecondsRealtime(0.1f);
-            Showtime.OnInteractEnded();
+            yield return null;
+            yield return "strike";
+            yield return "solve";
+            ShowTimeSel.OnInteract();
+            yield return new WaitForSeconds(0.1f);
+            ShowTimeSel.OnInteractEnded();
+            yield return new WaitForSeconds(0.1f);
         }
-        while (!RealPass) yield return true;
+        m = Regex.Match(command, @"^\s*skip\s*", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        if (m.Success)
+        {
+            if (!_stageRecovery)
+            {
+                yield return "sendtochaterror You are not in stage recovery! You may not skip to input.";
+                yield break;
+            }
+            while (_currentStage != _stageCount && !_pseudoSubmissionPhase)
+            {
+                ShowTimeSel.OnInteract();
+                yield return new WaitForSeconds(0.05f);
+                ShowTimeSel.OnInteractEnded();
+                yield return new WaitForSeconds(0.05f);
+            }
+        }
+        yield break;
+    }
+
+    private IEnumerator TwitchHandleForcedSolve()
+    {
+        while (_stageRecovery && _currentStage != _stageCount && !_pseudoSubmissionPhase)
+        {
+            ShowTimeSel.OnInteract();
+            yield return new WaitForSeconds(0.05f);
+            ShowTimeSel.OnInteractEnded();
+            yield return new WaitForSeconds(0.05f);
+        }
+        while (_currentStage != _stageCount || !_submissionPhase)
+        {
+            yield return true;
+        }
+        for (int i = 0; i < 36; i++)
+        {
+            if (_inputSquares[i] != _solutionSquares[i])
+            {
+                SquareSels[i].OnInteract();
+                yield return new WaitForSeconds(0.05f);
+            }
+        }
+        ShowTimeSel.OnInteract();
+        yield return new WaitForSeconds(0.1f);
+        ShowTimeSel.OnInteractEnded();
+        yield return new WaitForSeconds(0.1f);
+        while (!_trueModuleSolved)
+            yield return true;
     }
 }
