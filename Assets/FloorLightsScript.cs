@@ -244,10 +244,10 @@ public class FloorLightsScript : MonoBehaviour
 
     private void Update()
     {
-        if (_stageRecovery)
+        if (_stageRecovery || !_readyToAdvance)
             return;
         _currentSolves = BombInfo.GetSolvedModuleNames().Count(i => !_ignoredModules.Contains(i));
-        if (!_readyToAdvance || _currentStage == _currentSolves)
+        if (_currentStage == _currentSolves)
             return;
         if (_currentStage <= _stageCount)
             Advance();
